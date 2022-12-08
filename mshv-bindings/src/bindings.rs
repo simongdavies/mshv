@@ -13497,13 +13497,24 @@ impl Default for mshv_create_partition {
     }
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct mshv_user_mem_region {
     pub size: __u64,
     pub guest_pfn: __u64,
     pub userspace_addr: __u64,
     pub flags: __u32,
 }
+
+impl Default for mshv_user_mem_region {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+
 #[test]
 fn bindgen_test_layout_mshv_user_mem_region() {
     assert_eq!(
