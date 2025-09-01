@@ -903,6 +903,73 @@ mod tests {
         let vcpu = vm.create_vcpu(0);
         assert!(vcpu.is_ok());
     }
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_frees_resources() {
+        // This test relies on the fact that no more than 2040 VMs can be created on a host.
+        // it will fail if the VM does not get freed when the VcpudFd/VmFd are dropped.
+        for _ in 0..2041 {
+            let hv = Mshv::new().unwrap();
+            let vm = hv.create_vm_with_args(&Default::default()).unwrap();
+            let features: hv_partition_synthetic_processor_features = Default::default();
+            vm.set_partition_property(
+                hv_partition_property_code_HV_PARTITION_PROPERTY_SYNTHETIC_PROC_FEATURES,
+                unsafe { features.as_uint64[0] },
+            )
+            .unwrap();
+            vm.initialize().unwrap();
+            vm.create_vcpu(0).unwrap();
+        }
+    }
+
+    // This test relies on the fact that no more than 2040 VMs can be created on a host.
+    // If that limit is changed this test will fail this helps to ensure that the test `test_frees_resources` is valid
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_vcpu_resource_exhaustion() {
+        // This test verifies that holding onto VCPUs prevents resource cleanup
+        // and that the system properly returns error 131 (ENOTRECOVERABLE) when
+        // the maximum number of VMs/VCPUs is exceeded.
+
+        let mut vcpus = Vec::new();
+        let mut vms = Vec::new();
+        let mut hvs = Vec::new();
+
+        for i in 0..2041 {
+            let hv = Mshv::new().unwrap();
+            let vm = hv.create_vm_with_args(&Default::default()).unwrap();
+            let features: hv_partition_synthetic_processor_features = Default::default();
+            vm.set_partition_property(
+                hv_partition_property_code_HV_PARTITION_PROPERTY_SYNTHETIC_PROC_FEATURES,
+                unsafe { features.as_uint64[0] },
+            )
+            .unwrap();
+            match vm.initialize() {
+                Ok(()) => {
+                    assert!(i <= 2039, "Expected to fail on iteration 2041 (index 2040), but succeeded on iteration {} (index {})", i + 1, i);
+                }
+                Err(e) => {
+                    assert_eq!(i, 2040, "Expected to fail on iteration 2041 (index 2040), but failed on iteration {} (index {})", i + 1, i);
+                    assert_eq!(
+                        e.errno(),
+                        131,
+                        "Expected error 131 (ENOTRECOVERABLE), got {}",
+                        e.errno()
+                    );
+                    return;
+                }
+            }
+
+            let vcpu = vm.create_vcpu(0).unwrap();
+
+            // Keep the vcpu alive by storing it
+            vcpus.push(vcpu);
+            vms.push(vm);
+            hvs.push(hv);
+        }
+
+        panic!("Expected test to fail with error 131 before completing all iterations");
+    }
 
     #[cfg(target_arch = "x86_64")]
     #[test]
